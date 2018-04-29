@@ -1,0 +1,567 @@
+﻿
+经验总结：对于数据库链接尤其是这种几何数据数据存储来说，简直爆炸，争取九点之前解决这个问题。----超时解决40分钟
+         1、类库强制更换的方法-------已经解决-----------------------------------------------------1
+         2、缺少mspdb100.dll 的方法处理方案。在commom IDE10.0中找到对应的拖放道指定的文件夹就行了----1
+         3、如何使用sn命令来获取当前的类库的公钥，查找当前的公钥，并且完成各个配置文件中的对应的runtime节点的替换工作、并进行测试和调整---------------------完成部分、不影响工作-------------0.6
+         4、鉴于没有办法使用linq和匿名的方法进行三层架构的生成和书写，但是现在已经可以勉强进行三层架构的总结，
+         5、在没有办法的情况下，只能采用最为无奈的方法，将数据生成工作交给数据库，这里只是传递sql文本语句，但是这样做的话，需要自己去写个生成WKT的工具方案，这种方案作为备用方案进行处理。-----已经解决，需要指明UdtTypeName类型------------------------------------------------------------------------------------1
+         6、强制进行类库的升级转换--------------------完成-----------------------------------------1
+         7、在使用ajax的时候需要注意，对于asmx服务，其会直接将其转换为XMl格式，因此在指定访问数据的时候，不要进行设置contentType。 
+
+
+
+解决问题方案草稿回顾：
+
+1、如何处理还老兵信息和论坛部分的关系
+解： 在老兵的ID中插入一个对应的论坛的帖子ID,前提也就是没有足够的信息的情况下，需要创建一个工具进行自动生成对应的帖子，然后进行展示。然后将这种工具进行处理之后，收入工具库，以备后续使用。在前提写工具的时候，将创建帖子的业务流程抽象出来，按照这种写成对应的逻辑代码，快点将页面进行写出来，然后展示出来。
+
+
+2、针对的sqlgeometryphy的使用，案例代码
+if ( result[i].X.ToString() != "" && result[i].Y.ToString() != "")
+                {
+                    string locationpoint = "Point(" + result[i].X.ToString() + " " + result[i].Y.ToString() + ")";
+                    //-------------------结束构建WKT语句---------------
+                    SqlString parstring = new SqlString(locationpoint);
+                    SqlChars pars = new SqlChars(parstring);
+                    SqlGeography localpoint = SqlGeography.STPointFromText(pars, 4326);
+                    result[i].Location = localpoint;
+                }
+3、强制进行类库的升级转换，在配置文件中添加下列代码：
+  <runtime>
+    <assemblyBinding xmlns="urn:schemas-microsoft-com:asm.v1">
+      <dependentAssembly>
+        <assemblyIdentity name="Microsoft.SqlServer.Types"
+                          publicKeyToken="89845dcd8080cc91"
+                          culture="neutral" />
+        <bindingRedirect oldVersion="10.0.0.0" newVersion="12.0.0.0" />
+      </dependentAssembly>
+    </assemblyBinding>
+  </runtime>
+
+
+4、如何解决创建老兵帖的时候，拿到对应的帖子ID？
+解：1、这个问题的关键在与第一次提交创建帖的时候，并没有拿到对应的帖子的ID标签，这就带来了另一个问题，如何在提交程序的时候，返回对象的ID？这种方案能采用MD5的方案进行解决，在生成之前就生成一个MD5,值作为校验值吗，用来进行检索的。
+现在发现可以通过select identity的方式拿到当前对话的ID，这种方案是极好的，但是可能有问题，目前还在测试中。
+5、对于老兵信息模块，建议直接根据老兵的信息自动生成对应的帖子，在内部完成帖子的完成的录入。
+6、今天解决了前后台文字传输的时的XML和JSON的之间转换问题。
+   这里需要对于部分代码进行贴出来，以便后期访问和使用
+   /----------------------------------转换XML对象的代码----------------------------------/
+   unction xmlfromtext(xmlString) {
+    var xmlDoc = null;
+    //判断浏览器的类型
+    //支持IE浏览器
+    if (!window.DOMParser && window.ActiveXObject) { //window.DOMParser 判断是否是非ie浏览器
+        var xmlDomVersions = ['MSXML.2.DOMDocument.6.0', 'MSXML.2.DOMDocument.3.0', 'Microsoft.XMLDOM'];
+        for (var i = 0; i < xmlDomVersions.length; i++) {
+            try {
+                xmlDoc = new ActiveXObject(xmlDomVersions[i]);
+                xmlDoc.async = false;
+                xmlDoc.loadXML(xmlString); //loadXML方法载入xml字符串
+                break;
+            } catch (e) {
+            }
+        }
+    }
+        //支持Mozilla浏览器
+    else if (window.DOMParser && document.implementation && document.implementation.createDocument) {
+        try {
+            /* DOMParser 对象解析 XML 文本并返回一个 XML Document 对象。
+            * 要使用 DOMParser，使用不带参数的构造函数来实例化它，然后调用其 parseFromString() 方法
+            * parseFromString(text, contentType) 参数text:要解析的 XML 标记 参数contentType文本的内容类型
+            * 可能是 "text/xml" 、"application/xml" 或 "application/xhtml+xml" 中的一个。注意，不支持 "text/html"。
+            */
+            domParser = new DOMParser();
+            xmlDoc = domParser.parseFromString(xmlString, 'text/xml');
+        } catch (e) {
+        }
+    }
+    else {
+        return null;
+    }
+    return xmlDoc;
+}
+/---------------------------------------------结束文本到XML对象之间的转化---------------------------/
+/---------------------------------------------开始完成XML到JSON数据之间的转化问题-----------------/
+function (data) {
+            //注意这里是需要判别下是不是json格式的数据，若是不是的话，就只能硬钢Xml了
+            var data1 = data.responseText;
+            var xmls = xmlfromtext(data1);
+            var temp = xmls;
+            var json = {};
+            //这些代码可以处理大批量的数据格式
+            temp = temp.childNodes[0].children
+            for (var i = 0; i < temp.length; i++) {
+                json[i] = temp[i].innerHTML;
+            }
+            var lblist = [];
+            for (var i in json) {
+                var temp = JSON.parse(json[i]);
+                lblist.push(temp);
+            }
+            temp = lblist;
+             lb = temp[0];
+            show(lb);
+            //了数据转换完成
+        }
+/------------------------------------------结束转化--------------------------------------------/
+7、文件跨域上传的方法已经解决，代码如下，其中的出现的bug是因为webserve采用XML
+/------------------------------------------前台代码---------------------------------------------/
+ <script type="text/javascript">
+    function doUpload() {
+        var formData = new FormData($("#uploadForm")[0]);
+        $.ajax({
+            url: configUrl+'/redmomeryserver.asmx/UploadFile?jsoncallback=shows',
+            type: 'POST',
+            data: formData,
+            async: false,
+            cache: false,
+            contentType: false,
+            processData: false,
+            //                    dataType: "jsonp",//问题就在这里，如果用了jsonp，那么后台就接收不到文件流，无法获得文件流，就没办法把文件写入服务器。如果不指定，就是注释掉，虽然ajax提交之后，还是跑到error那里去，但是文件已经是成功写入服务器的了。
+            jsonp: "jsoncallback",
+            success: function (returndata) {
+                var vData = JSON.stringify(returndata);
+                alert(vData);
+            },
+            error: function (returndata) {
+                var vData = JSON.stringify(returndata);
+                alert(vData);
+            }
+        });
+    }
+    </script>
+    /---------------------------------后台代码------------------------------------------------------/
+     [WebMethod]
+        public void UploadFile()
+         {
+             HttpContext.Current.Response.ContentType = "application/json:charset=utf-8";
+             string jsonCallbackFunName = HttpContext.Current.Request.Params["jsoncallback"].ToString();
+             string strJson = "";
+             HttpFileCollection files = HttpContext.Current.Request.Files;
+             string strFileName=HttpContext.Current.Request["filename"];
+             byte[] b = new byte[files[0].ContentLength];
+             System.IO.Stream fs = (System.IO.Stream)files[0].InputStream;
+             fs.Read(b, 0, files[0].ContentLength);
+             //定义一个内存流
+             FileStream f = new FileStream(Server.MapPath("\\resource\\file") + "\\"+files[0].FileName,FileMode.Create);
+             StreamWriter sw = new StreamWriter(f);
+             sw.Write(f);
+             sw.Close();
+             f.Close();
+             f = null;
+             if (strJson == "")
+             {
+                 strJson = "0";
+             }
+             HttpContext.Current.Response.Write(string.Format("{0}({1})", jsonCallbackFunName, strJson));
+             HttpContext.Current.Response.End();
+         }
+    /--------------------------------结束第7问题的解决方案-----------------------------------------/
+7、如何在插入新的信息的时候，同时获得信息插入时候的ID？
+  解：在插入新的信息中添加MD5的字段，在完成插入之后，在按照MD5进行检索出，指定的对象，这样虽然浪费时间，但是可以在接受的范围内,同时发现可以通过连接获取的方式获取当前插入的ID。
+8、如何实现图片的预览？
+  解：就是将本地文件的地址转换为网络资源文件地址
+  /-----------------------------------获取本地文件地址----------------------------------------------/
+function getFileUrl(sourceId) {
+    var url;
+    if (navigator.userAgent.indexOf("MSIE") >= 1) { // IE   
+        url = document.getElementById(sourceId).value;
+    }
+    else if (navigator.userAgent.indexOf("Firefox") > 0) { // Firefox   
+        url = window.URL.createObjectURL(document.getElementById(sourceId).files.item(0));
+    }
+    else if (navigator.userAgent.indexOf("Chrome") > 0) { // Chrome   
+        url = window.URL.createObjectURL(document.getElementById(sourceId).files.item(0));
+    }
+    return url;
+}
+  /----------------------------------图片预览结束-------------------------------------------------/
+9、文件存储问题？
+ 解：这里作为一些简单约定，对于一些不知道是什么文件的存储，这里就是存储问题，就是
+ M_ID = 0 ， T_ID=0;
+10、关于时间控件问题？
+ 解：结果测试网页中的时间控件的时间值的字符串格式，在后台可以直接凭借一个方法完成字符串-->时间类型的转换
+ 具体代码：  
+          string LBbirthday = HttpContext.Request["lbbirthday"].ToString();
+          DateTime dt = DateTime.Parse(LBbirthday);
+/--------------------------------------10个问题解决------------------------------------------------/
+11、评论进行处理，这里主要用来展示关于评论的文件列表？
+   css:
+       style_comment.css;
+       comment.css
+   js:
+       jquery.flexText.js;
+       tribune.js
+       pagevariable.js
+12、这里其实应该注意数据库在设计时应该提前将每个字段的含义记下来，不要相信自己的记忆力，这个问题就是为了，数据库中每个表的字段含义做一个备份？
+解：BBSTITLE_Table:  Authonrity //这个字段的主要目的就是为帖子的置顶有个参考。
+    View_T_U：这个视图主要是为展示当前每一个帖子的信息
+
+13、关于视图的用法，发现在这里，基本都需要针对每个对象建立一个视图模块，然后在进行评论的时候，在按照对应的ID进行提交
+14、网络端变量的说法：
+   1、所有的变量除了个人信息之外全部都是对应的视图。
+   2、当提交的时候，就需要进行按照对应的信息进行提交。
+   3、注意下列网络变量的已被声明（class）：
+                     1、commentAll： 评论区
+                     2、reviewArea clearfix：
+                     3、content comment-input：
+                     4、plBtn：
+                     5、comment-show：
+                     6、comment-show-con clearfix：
+                     7、comment-show-con-img pull-left：
+                     8、comment-show-con-list pull-left clearfix：
+                     9、pl-text clearfix：
+                     10、comment-size-name：
+                     11、my-pl-con：
+                     12、date-dz
+                     13、date-dz-left pull-left comment-time：
+                     14、date-dz-right pull-right comment-pl-block：
+                     15、removeBlock
+                     16、date-dz-pl pl-hf hf-con-block pull-left
+                     17、pull-left date-dz-line：
+                     18、date-dz-z pull-left
+                     19、date-dz-z-click-red
+                     20、z-num
+                     21、hf-list-con
+   4、ClistTID_XXX ：XXX为TID
+   　CList_XXX: XXX 为CID
+
+
+15、json文件格式的展示数据
+json数组格式：
+[
+  {},
+  {},
+  {},
+]
+
+16、如何实现全网搜索？
+ 解：这里使用axms服务，所以传输的数据为xml，
+ 前台代码：
+        function query(selectsite, keyword, pageIndex) {
+            $.post("/redmomeryserver.asmx/Bing", { selectsite: selectsite, keyword: keyword, PageIndex: pageIndex }, function (data) {
+                //由于这个data传输来为xml。需要转换为对应的json文件
+                $("#result").empty();
+                var arrstr = [];
+                for (var i = 0; i < data.childNodes.length; i++) {
+                    for (var j = 0; j < data.childNodes[i].children.length;j++)
+                    {
+                        var temp = data.childNodes[i].children[j].innerHTML;
+                        temp = temp.replace(new RegExp("&lt;", "gm"), '<');//"&lt;", '<');
+                        temp = temp.replace(new RegExp("&gt;", "gm"), ">");//"&gt;", '>');
+                        $("#result").append("<div style='padding-top:10px'><div>" + temp + "</div></div>");
+                    }
+                }
+               
+            });
+        };
+
+后台代码：
+
+    [WebMethod]
+        public List<string> Bing(string keyword, string selectsite, int PageIndex)
+        {
+            JumonyParser jumony = new JumonyParser();
+            //如：
+            var url = "http://cn.bing.com/search?q=" + keyword + "+site:" + selectsite + "&first=" + PageIndex + "1&FORM=PERE";
+            var document = jumony.LoadDocument(url);
+            var list = document.Find("#b_results .b_algo").ToList().Select(t => t.ToString()).ToList();
+
+            var listli = document.Find("li.b_pag nav ul li");
+            if (PageIndex > 0 && listli.Count() == 0)
+                return null;
+
+            if (listli.Count() > 1)
+            {
+                var text = document.Find("li.b_pag nav ul li").Last().InnerText();
+                int npage = -1;
+                if (text == "下一页")
+                {
+                    if (listli.Count() > 1)
+                    {
+                        var num = listli.ToList()[listli.Count() - 2].InnerText();
+                        int.TryParse(num, out npage);
+                    }
+                }
+                else
+                    int.TryParse(text, out npage);
+                if (npage <= PageIndex)
+                    list = null;
+            }
+            return list;// result;
+        }
+
+17、json文件对应的遍历？
+function getlnglatbycityName(cityname)
+{
+    //这个方法给出对应的json对象
+    for (var og in citylnglat) {
+        if (cityname == og)
+        {
+            var temp = citylnglat[og];
+            var lng = temp[0].toString();
+            var lat = temp[1].toString();
+            var result = '{\"lng\":' + lng + ',\"lat\":' + lat + '}';
+            return JSON.parse(result);
+        }
+    }
+
+}
+
+18、数据统计思路？
+  解： 1、从数据库中提取对应的实体对象
+       2、然后，将实体对象中lng，lat带入公式中，
+       3、得到对应的网址，开始进行网页文件解析
+     实例文本： 
+        {"status":0,"result":{"location":{"lng":121.96829223632793,"lat":37.16608424486709},"formatted_address":"山东省威海市文登市","business":"米山","addressComponent":{"country":"中国","country_code":0,"province":"山东省","city":"威海市","district":"文登市","adcode":"371081","street":"","street_number":"","direction":"","distance":""},"pois":[],"roads":[],"poiRegions":[],"sematic_description":"","cityCode":175}}
+     解决方案：采用堆栈的方案进行解决。
+              1、当遇到“{”时候，就压入栈中，当遇到 “,”，就前一个压入的元素取出来。进行构建对象，构建完之后，在压回栈中，
+                 例如：{ object 名称：{}，}
+19、如何在查询到地址的同时拿到对应的数据？
+   设计数据格式为： 
+                  name: 城市名称
+                  citycode：城市编码
+                  citynum：城市数目
+                  citylocal：folat[2];
+  拆分为：
+         name:城市名称
+         value：数量
+        
+         城市名称：'海门':[121.15,31.89],
+  单次循环一次解决
+
+
+23： {"status":0,
+      "result":{"location":{"lng":118.14097079845904,"lat":25.395598523492639},
+                 "precise":0,
+                 "confidence":14,
+                 "level":"区县"
+               }
+     }
+
+28、遇到问题，
+   如何处理群组聊天记录的同步与加载问题。
+   由于聊天记录的比较复杂不能进行数据的过多存贮，所以这里能不能采用时间记录的方式进行处理，
+   需要解决的问题，如何将数据库的中的时间进行比较，还有如何查询到制定的问题目录中的问题，
+   如何比较时间大小问题，可以进行时间的比较
+   数据库关于时间的总结，
+   可以通过时间的排序的方式进行处理。读取记录的暂时存储
+   解决方案：
+            1、首先又用户发送接收到的数据的最新的时间记录
+            2、将这个信息传输到后台，就进行数据的加载工作，
+            3、通过对于加载出的信息列表进行比对，然后取出没有读取的记录
+            4、然后在读取记录后面的读取人数进行加1，不需要输出的数据，就不要在进行数据的读取和操作
+
+   //注意这里采用js访问文件的技术，和js中永久存储的技术，通过这两个技术的结合完成对于聊天记录版本的完成。
+
+   同样的这里存储策略为
+                     1、数据库中的关于活动的聊天记录，一直到活动结束后才允许删除，否者的话，在活动日期之后的三天之后就进行删除，除非指定的延长时间（最多一个星期），过了指定时间之后，就开始按照时间进行删除，如何实现这个功能
+                     采用localstorage存储存储当前指定的群组的记录时间，
+
+                     存储过程如下，key：recordtime value ：[记录数组的时间字符串数组]
+                     用户的群组列表，key：grouplist value [gropun对象]
+
+                     1、需要一张表进行处理这个东西，还有如何实现这个线程？
+                        记录有效时间效表，当超过这个时间表格之后就开始进行清除
+
+
+                    确定客户端，这里采用的存储方案是INdexDB方案，记录数据的名称是
+                    客户端数据库的名称是 Chargroupredmomery
+                              个人   charUserredmomery
+
+   现在正是开始当前系统所有功能全部测试和汇总。
+   
+29、对于切分传输数据的方案
+//-------------------------------------前台代码--------------------------
+function uploadlB()
+{
+
+    var lbform = $("#lbziliao")[0];
+    var formData = new FormData(lbform);
+    $.ajax({
+        url: configUrl + '/LBbx/UploadLB',
+        type: 'POST',
+        data: formData,
+        async: false,
+        cache: false,
+        contentType: false,
+        processData: false,
+        success: function (returndata) {
+            alert("成功，开始上传文件");
+        },
+        error: function (returndata) {
+            alert("失败,可能是你没有登录");
+        },
+        complete: function (data) {
+           console.log(data.responseText);
+           LBC = JSON.parse(data.responseText);
+            try{
+                //下面开始上传对应的老兵视频该数据
+                var spark = new SparkMD5();
+                var reader = new FileReader();
+                var file = $("#lbvideofile")[0].files[0],  //文件对象
+                   name = file.name,        //文件名
+                   size = file.size,        //总大小
+                   succeed = 0;
+
+                var shardSize = 2 * 1024 * 1024,     //以2MB为一个分片
+                    shardCount = Math.ceil(size / shardSize);   //总片数
+                var blos = file.slice(0, file.size);
+                reader.readAsArrayBuffer(blos);
+                reader.onload = function (e) {
+                    //每块交由sparkMD5进行计算
+                    spark.appendBinary(e.target.result);
+                    name = spark.end() + name;
+           
+                    for (var i = 0; i < shardCount-1; ++i) {
+                        //计算每一片的起始与结束位置
+                        var start = i * shardSize,
+                            end = Math.min(size, start + shardSize);
+
+                        //构造一个表单，FormData是HTML5新增的
+                        var form = new FormData();
+                        form.append("data", file.slice(start, end));  //slice方法用于切出文件的一部分
+                        form.append("name", name);
+                        form.append("total", shardCount);   //总片数
+                        form.append("index", i + 1);        //当前是第几片
+                        //当前老兵的信息
+                        form.append("LBinfo",JSON.stringify(LBC));
+                        //Ajax提交
+                        $.ajax({
+                            url: "/LBbx/Upvideo",
+                            type: "POST",
+                            data: form,
+                            async: true,         //异步
+                            processData: false,  //很重要，告诉jquery不要对form进行处理
+                            contentType: false,  //很重要，指定为false才能形成正确的Content-Type
+                            success: function () {
+                                ++succeed;
+                                $("#outputvideo").text(succeed + " / " + shardCount);
+                                console.log(e);
+                                //进行最后的一个文件的传输
+                                if (succeed == shardCount - 1)
+                                {
+                                    var start = succeed * shardSize,
+                                    end = Math.min(size, start + shardSize);
+
+                                    //构造一个表单，FormData是HTML5新增的
+                                    var form = new FormData();
+                                    form.append("data", file.slice(start, end));  //slice方法用于切出文件的一部分
+                                    form.append("name", name);
+                                    form.append("total", shardCount);   //总片数
+                                    form.append("index", succeed + 1);        //当前是第几片
+                                    //当前老兵的信息
+                                    form.append("LBinfo",JSON.stringify(LBC));
+                                    //Ajax提交
+                                    $.ajax({
+                                        url: "/LBbx/Upvideo",
+                                        type: "POST",
+                                        data: form,
+                                        async: true,         //异步
+                                        processData: false,  //很重要，告诉jquery不要对form进行处理
+                                        contentType: false,  //很重要，指定为false才能形成正确的Content-Type
+                                        success: function (e) {
+                                            ++succeed;
+                                            $("#outputvideo").text(succeed + " / " + shardCount);
+                                            console.log(e);
+                                        },
+                                        error: function (e) {
+                                            console.log(e);
+                                        }
+                                    });
+                                }
+                   
+                            }
+                        });
+                    }
+                }
+            }
+            catch(e){}
+            //上传轨迹按钮事件
+            $(document).on("click", ".sub", function () {
+                for (var i = 0; i < datas.length; i++) {
+                    datas[i].address = $("#form-control-local-" + i).val();
+                    datas[i].time = $("#form-control-date-" + i).val();
+                    datas[i].context = $("#form-control-context-" + i).val();
+                    var data = datas;
+                    var liststr=JSON.stringify(data);
+                    var LbID = JSON.stringify(LBC);
+                    //UploadTrajectory(string tystr,string LBID)
+                   
+                }
+                $.ajax({
+                    type: 'POST',
+                    url: '/LBbx/UploadTrajectory',
+                    data: { tystr: liststr, LBID: LbID },
+                    success: function (e) {
+                        alert("老兵轨迹上传成功");
+                        console.log(e);
+                    },
+                    error: function (e) {
+                        alert("请先上传老兵信息，或者进行登录");
+                        console.log(e);
+                    }
+                });
+
+            })
+        }
+    });
+}
+//-------------------------------------后台代码----------------------------------------------
+
+        [WebMethod]
+        public ActionResult Upvideo()
+        {
+              USER_INFO user = Session["user"] as USER_INFO;
+            //从Request中取参数，注意上传的文件在Requst.Files中
+            string name = Request["name"];
+            string LBinfo = Request["LBinfo"];
+            LB_INFO lb=redmomery.Common.SerializerHelper.DeserializeToObject<LB_INFO>(LBinfo);
+            int total = Convert.ToInt32(Request["total"]);
+            int index = Convert.ToInt32(Request["index"]);
+            var data = Request.Files["data"];
+
+            //保存一个分片到磁盘上
+            string dir = Server.MapPath("\\resource\\filetemp");
+            string file = Path.Combine(dir, name + "_" + index);
+            data.SaveAs(file);
+            //下面开始进行主要是为了进行数据的文件的统计问题很明显这里应该知道的数据的中临时文件不对，由于数据传输的问题，所以数据必须完成尽心传输
+           
+
+            //如果已经是最后一个分片，组合
+            //当然你也可以用其它方法比如接收每个分片时直接写到最终文件的相应位置上，但要控制好并发防止文件锁冲突
+            if (index == total)
+            {
+                try
+                {
+                    file = Path.Combine(dir, name);
+                    var fs = new FileStream(file, FileMode.OpenOrCreate);
+                    for (int i = 1; i <= total; ++i)
+                    {
+                        string part = Path.Combine(dir, name + "_" + i);
+                        var bytes = System.IO.File.ReadAllBytes(part);
+                        fs.Write(bytes, 0, bytes.Length);
+                        bytes = null;
+                        System.IO.File.Delete(part);
+                    }
+                    fs.Close();
+                    FILE_TABLE filet = new FILE_TABLE();
+                    filet.url = "/resource/filetemp/" + name;
+                    filet.Name = name;
+                    filet.T_ID = lb.T_ID;
+                    filet.U_ID = user.USER_ID;
+                    filet.M_ID = -1;
+                    filet.N_View = 0;
+                    filet.Keyvalues = Path.GetExtension(file);
+                    FILE_TABLEDAL dal = new FILE_TABLEDAL();
+                    int indexsas = dal.addNew(filet);
+                    FILE_TABLE ft = dal.get(indexsas);
+                    return Json(ft);
+                }
+                catch (Exception ex)
+                {
+                    return Json(ex);
+                }
+            }
+            return Json("成功");
+        }
